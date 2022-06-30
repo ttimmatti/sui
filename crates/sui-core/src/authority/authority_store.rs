@@ -1436,6 +1436,13 @@ impl<S: Eq + Serialize + for<'de> Deserialize<'de>> SuiDataStore<S> {
             .expect("Sui System State object deserialization cannot fail");
         Ok(result)
     }
+
+    pub fn get_sui_system_state_object_ref(&self) -> SuiResult<ObjectRef> {
+        let sui_system_object = self
+            .get_object(&SUI_SYSTEM_STATE_OBJECT_ID)?
+            .expect("Sui System State object must always exist");
+        Ok(sui_system_object.compute_object_reference())
+    }
 }
 
 impl SuiDataStore<AuthoritySignInfo> {

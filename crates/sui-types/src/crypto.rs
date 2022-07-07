@@ -5,6 +5,7 @@ use crate::committee::{Committee, EpochId};
 use crate::error::{SuiError, SuiResult};
 use crate::sui_serde::Base64;
 use crate::sui_serde::Readable;
+use crate::sui_serde::SuiBitmap;
 use anyhow::Error;
 use base64ct::Encoding;
 use digest::Digest;
@@ -16,13 +17,14 @@ use narwhal_crypto::traits::{
     VerifyingKey,
 };
 use rand::rngs::OsRng;
+use roaring::RoaringBitmap;
 use schemars::JsonSchema;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::Bytes;
 use sha3::Sha3_256;
 use signature::Signature as NativeSignature;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::hash::{Hash, Hasher};
 
 // Question: Should we change this to newtype?
@@ -406,14 +408,15 @@ impl AuthoritySignInfo {
     ) -> SuiResult<()> {
         obligation
             .public_keys
-            .get(message_index)
+            .get_mut(message_index)
             .ok_or(SuiError::InvalidAddress)?
             .push(committee.public_key(&self.authority)?);
         obligation
             .signatures
-            .get(message_index)
+            .get_mut(message_index)
             .ok_or(SuiError::InvalidAddress)?
-            .add_signature(self.signature.clone());
+            .add_signature(self.signature.clone())
+            .map_err(|_| SuiError::InvalidSignature { error: "Invalid Signature".to_string() })?;
         Ok(())
     }
 }
@@ -424,13 +427,15 @@ impl AuthoritySignInfo {
 /// at least the quorum threshold (2f+1) of the committee; when STRONG_THRESHOLD is false,
 /// the quorum is valid when the total stake is at least the validity threshold (f+1) of
 /// the committee.
+#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AuthorityQuorumSignInfo<const STRONG_THRESHOLD: bool> {
     pub epoch: EpochId,
     #[schemars(with = "Base64")]
-    pub authorities: Vec<AuthorityName>,
+    pub signature: AggregateAuthoritySignature,
     #[schemars(with = "Base64")]
-    pub signature: AggregateAuthoritySignature
+    #[serde_as(as = "SuiBitmap")]
+    pub signers_map: RoaringBitmap,
 }
 
 pub type AuthorityStrongQuorumSignInfo = AuthorityQuorumSignInfo<true>;
@@ -452,6 +457,51 @@ pub type AuthorityWeakQuorumSignInfo = AuthorityQuorumSignInfo<false>;
 impl<const S: bool> AuthoritySignInfoTrait for AuthorityQuorumSignInfo<S> {}
 
 impl<const STRONG_THRESHOLD: bool> AuthorityQuorumSignInfo<STRONG_THRESHOLD> {
+    pub fn new(epoch: EpochId) -> Self {
+        AuthorityQuorumSignInfo {
+            epoch,
+            signature: AggregateAccountSignature::default(),
+            signers_map: RoaringBitmap::new(),
+        }
+    }
+
+    pub fn new_with_signatures(
+        epoch: EpochId,
+        mut signatures: Vec<(PublicKeyBytes, AuthoritySignature)>,
+        committee: &Committee,
+    ) -> SuiResult<Self> {
+        let mut map = RoaringBitmap::new();
+
+        signatures.sort_by_key(|(public_key, _)| *public_key);
+
+        for (pk, _) in &signatures {
+            map.insert(
+                committee
+                    .authority_index(pk)
+                    .ok_or(SuiError::UnknownSigner)? as u32,
+            );
+        }
+        let sigs: Vec<AuthoritySignature> = signatures.into_iter().map(|(_, sig)| sig).collect();
+
+        Ok(AuthorityQuorumSignInfo {
+            epoch,
+            signature: AggregateAuthoritySignature::aggregate(sigs)
+                .map_err(|e| SuiError::InvalidSignature { error: e.to_string() })?,
+            signers_map: map,
+        })
+    }
+
+    pub fn authorities<'a>(
+        &'a self,
+        committee: &'a Committee,
+    ) -> impl Iterator<Item = SuiResult<&AuthorityName>> {
+        self.signers_map.iter().map(|i| {
+            committee
+                .authority_by_index(i)
+                .ok_or(SuiError::InvalidAuthenticator)
+        })
+    }
+
     pub fn add_to_verification_obligation(
         &self,
         committee: &Committee,
@@ -465,30 +515,27 @@ impl<const STRONG_THRESHOLD: bool> AuthorityQuorumSignInfo<STRONG_THRESHOLD> {
                 expected_epoch: committee.epoch()
             }
         );
-
+        
         let mut weight = 0;
-        let mut used_authorities = HashSet::new();
-
-        let pk_index = obligation.public_keys.len();
+        let pk_vec = obligation.public_keys.get_mut(message_index).ok_or(SuiError::InvalidAddress)?;
 
         // Create obligations for the committee signatures
-        for authority in self.authorities.iter() {
-            // Check that each authority only appears once.
-            fp_ensure!(
-                !used_authorities.contains(authority),
-                SuiError::CertificateAuthorityReuse
-            );
-            used_authorities.insert(*authority);
+        obligation.signatures.get_mut(message_index)
+            .ok_or(SuiError::InvalidAuthenticator)?
+            .add_aggregate(self.signature.clone())
+            .map_err(|_| SuiError::InvalidSignature { error: "Signature Aggregation failed".to_string() })?;
+
+        for authority_index in self.signers_map.iter() {
+            let authority = committee
+                .authority_by_index(authority_index)
+                .ok_or(SuiError::UnknownSigner)?;
+
             // Update weight.
             let voting_rights = committee.weight(authority);
             fp_ensure!(voting_rights > 0, SuiError::UnknownSigner);
             weight += voting_rights;
 
-            obligation
-                .public_keys[pk_index]
-                .push(committee.public_key(authority)?);
-            obligation.signatures.push(signature.clone());
-            obligation.message_index.push(message_index);
+            pk_vec.push(committee.public_key(authority)?);
         }
 
         let threshold = if STRONG_THRESHOLD {
@@ -564,7 +611,7 @@ where
     S: AggregateAuthenticator,
 {
     lookup: PubKeyLookup<S::PubKey>,
-    messages: Vec<Vec<u8>>,
+    pub messages: Vec<Vec<u8>>,
     pub signatures: Vec<S>, // Change to AggregatedAuthenticator. Then make Ed25519Signature implement AggregatedAuthenticator.
     pub public_keys: Vec<Vec<S::PubKey>>,
 }
@@ -584,7 +631,7 @@ impl<S: AggregateAuthenticator> VerificationObligation<S>
             Some(v) => Ok(v.clone()),
             None => {
                 let public_key: S::PubKey = (*key_bytes).try_into()
-                    .map_err(|e| SuiError::InvalidAddress)?;
+                    .map_err(|_| SuiError::InvalidAddress)?;
                 self.lookup.insert(*key_bytes, public_key.clone());
                 Ok(public_key)
             }
@@ -593,24 +640,23 @@ impl<S: AggregateAuthenticator> VerificationObligation<S>
 
     /// Add a new message to the list of messages to be verified.
     /// Returns the index of the message.
-    pub fn add_message(&mut self, message: Vec<u8>) {
+    pub fn add_message(&mut self, message: Vec<u8>) -> usize {
         self.signatures.push(S::default());
+        self.public_keys.push(Vec::new());
         self.messages.push(message);
+        self.messages.len() - 1
     }
 
-    pub fn verify_all(self) -> SuiResult<PubKeyLookup<S::PubKey>> {
+    pub fn verify_all<'a>(self) -> SuiResult<PubKeyLookup<S::PubKey>> {
         S::batch_verify(
-            &self.signatures.iter().map(|x| x).collect::<Vec<_>>()[..],
-            &self
+            self
+                .signatures.iter().collect::<Vec<_>>(),
+            self
                 .public_keys
                 .iter()
-                .map(|x| &x.iter().collect::<Vec<_>>()[..])
-                .collect::<Vec<_>>()[..],
-            &self
-                .messages
-                .iter()
-                .map(|x| &x.iter().map(|&y| y).collect::<Vec<_>>()[..]).
-                collect::<Vec<_>>()[..]
+                .map(|x| x.iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            self.messages
         )
         .map_err(|error| SuiError::InvalidSignature {
             error: format!("{error}"),

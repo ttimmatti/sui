@@ -5,9 +5,9 @@
 use super::{base_types::*, batch::*, committee::Committee, error::*, event::Event};
 use crate::committee::{EpochId, StakeUnit};
 use crate::crypto::{
-    sha3_hash, AccountSignature, AggregateAccountSignature, AggregateAuthoritySignature,
+    sha3_hash, AggregateAccountSignature, AggregateAuthoritySignature,
     AuthoritySignInfo, AuthoritySignature, AuthorityStrongQuorumSignInfo, BcsSignable,
-    EmptySignInfo, PublicKey, Signable, Signature, SuiAuthoritySignature, VerificationObligation,
+    EmptySignInfo, Signable, Signature, SuiAuthoritySignature, VerificationObligation,
 };
 use crate::gas::GasCostSummary;
 use crate::messages_checkpoint::CheckpointFragment;
@@ -23,6 +23,7 @@ use move_core_types::{
     value::MoveStructLayout,
 };
 use name_variant::NamedVariant;
+use narwhal_crypto::traits::AggregateAuthenticator;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_name::{DeserializeNameAdapter, SerializeNameAdapter};
@@ -541,9 +542,14 @@ impl<S> TransactionEnvelope<S> {
             .get_verification_inputs(&self.data, self.data.sender)?;
         let idx = obligation.add_message(message);
         let key = obligation.lookup_public_key(&public_key)?;
-        obligation.public_keys.push(key);
-        obligation.signatures.push(signature);
-        obligation.message_index.push(idx);
+
+        obligation.public_keys.get_mut(idx)
+            .ok_or(SuiError::InvalidAuthenticator)?
+            .push(key);
+        obligation.signatures.get_mut(idx)
+            .ok_or(SuiError::InvalidAuthenticator)?
+            .add_signature(signature)
+            .map_err(|_| SuiError::InvalidSignature { error: "Failed to add signature to obligation".to_string() })?;
         Ok(())
     }
 
@@ -1156,11 +1162,14 @@ impl CertifiedTransactionEffects {
         epoch: EpochId,
         effects: TransactionEffects,
         signatures: Vec<(AuthorityName, AuthoritySignature)>,
-    ) -> Self {
-        Self {
+        committee: &Committee,
+    ) -> SuiResult<Self> {
+        Ok(Self {
             effects,
-            auth_signature: AuthorityStrongQuorumSignInfo { epoch, signatures },
-        }
+            auth_signature: AuthorityStrongQuorumSignInfo::new_with_signatures(
+                epoch, signatures, committee,
+            )?,
+        })
     }
 
     pub fn to_unsigned_effects(self) -> UnsignedTransactionEffects {
@@ -1211,6 +1220,7 @@ pub struct SignatureAggregator<'a> {
     weight: StakeUnit,
     used_authorities: HashSet<AuthorityName>,
     partial: CertifiedTransaction,
+    signature_stash: Vec<(AuthorityName, AuthoritySignature)>,
 }
 
 impl<'a> SignatureAggregator<'a> {
@@ -1227,6 +1237,7 @@ impl<'a> SignatureAggregator<'a> {
             weight: 0,
             used_authorities: HashSet::new(),
             partial: CertifiedTransaction::new(committee.epoch, transaction),
+            signature_stash: Vec::new()
         }
     }
 
@@ -1245,17 +1256,18 @@ impl<'a> SignatureAggregator<'a> {
             SuiError::CertificateAuthorityReuse
         );
         self.used_authorities.insert(authority);
+
         // Update weight.
         let voting_rights = self.committee.weight(&authority);
         fp_ensure!(voting_rights > 0, SuiError::UnknownSigner);
         self.weight += voting_rights;
-        // Update certificate.
-        self.partial
-            .auth_sign_info
-            .signatures
-            .push((authority, signature));
+        
+        self.signature_stash.push((authority, signature));
 
         if self.weight >= self.committee.quorum_threshold() {
+            // Update certificate.
+            self.partial.auth_sign_info =
+                AuthorityStrongQuorumSignInfo::new_with_signatures(self.partial.auth_sign_info.epoch, self.signature_stash.clone(), self.committee)?;
             Ok(Some(self.partial.clone()))
         } else {
             Ok(None)
@@ -1265,21 +1277,30 @@ impl<'a> SignatureAggregator<'a> {
 
 impl CertifiedTransaction {
     pub fn new(epoch: EpochId, transaction: Transaction) -> CertifiedTransaction {
-        Self::new_with_signatures(epoch, transaction, vec![])
+        CertifiedTransaction {
+            transaction_digest: transaction.transaction_digest,
+            is_verified: false,
+            data: transaction.data,
+            tx_signature: transaction.tx_signature,
+            auth_sign_info: AuthorityStrongQuorumSignInfo::new(epoch),
+        }
     }
 
     pub fn new_with_signatures(
         epoch: EpochId,
         transaction: Transaction,
         signatures: Vec<(AuthorityName, AuthoritySignature)>,
-    ) -> CertifiedTransaction {
-        CertifiedTransaction {
+        committee: &Committee,
+    ) -> SuiResult<CertifiedTransaction> {
+        Ok(CertifiedTransaction {
             transaction_digest: transaction.transaction_digest,
             is_verified: false,
             data: transaction.data,
             tx_signature: transaction.tx_signature,
-            auth_sign_info: AuthorityStrongQuorumSignInfo { epoch, signatures },
-        }
+            auth_sign_info: AuthorityStrongQuorumSignInfo::new_with_signatures(
+                epoch, signatures, committee,
+            )?,
+        })
     }
 
     pub fn to_transaction(self) -> Transaction {
@@ -1297,7 +1318,13 @@ impl CertifiedTransaction {
         }
 
         let mut obligation = VerificationObligation::default();
+        println!("Here");
         self.add_to_verification_obligation(committee, &mut obligation)?;
+        println!("HERE2");
+        println!("{:?}", obligation.signatures);
+        println!("{:?}", obligation.public_keys);
+        println!("{:?}", obligation.messages);
+
         obligation.verify_all().map(|_| ())
     }
 
@@ -1325,12 +1352,8 @@ impl Display for CertifiedTransaction {
         writeln!(writer, "Transaction Hash: {:?}", self.digest())?;
         writeln!(
             writer,
-            "Signed Authorities : {:?}",
-            self.auth_sign_info
-                .signatures
-                .iter()
-                .map(|(name, _)| name)
-                .collect::<Vec<_>>()
+            "Signed Authorities Bitmap : {:?}",
+            self.auth_sign_info.signers_map
         )?;
         write!(writer, "{}", &self.data.kind)?;
         write!(f, "{}", writer)

@@ -10,6 +10,9 @@ use hkdf::Hkdf;
 use rand::{CryptoRng, RngCore};
 use sha3::Sha3_256;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+use narwhal_crypto::traits::{
+    KeyPair as NarwhalKeypair, ToFromBytes
+};
 
 #[cfg(test)]
 #[path = "unit_tests/signature_seed_tests.rs"]
@@ -234,12 +237,12 @@ impl SignatureSeed {
     ) -> Result<KeyPair, SuiError> {
         // HKDF<Sha3_256> to deterministically generate an ed25519 private key.
         let hk = Hkdf::<Sha3_256>::new(Some(id), &self.0);
-        let mut okm = [0u8; ed25519_dalek::SECRET_KEY_LENGTH];
+        let mut okm = [0u8; KeyPair::SECRET_KEY_LENGTH];
         hk.expand(domain.unwrap_or(&DEFAULT_DOMAIN), &mut okm)
             .map_err(|e| SuiError::HkdfError(e.to_string()))?;
 
         // This should never fail, as we ensured the HKDF output is SECRET_KEY_LENGTH bytes.
-        let ed25519_secret_key = ed25519_dalek::SecretKey::from_bytes(&okm)
+        let ed25519_secret_key = <KeyPair as NarwhalKeypair>::PrivKey::from_bytes(&okm)
             .map_err(|e| SuiError::SignatureKeyGenError(e.to_string()))?;
         let ed25519_public_key = ed25519_dalek::PublicKey::from(&ed25519_secret_key);
 

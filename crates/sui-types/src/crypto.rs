@@ -11,7 +11,8 @@ use base64ct::Encoding;
 use digest::Digest;
 use ed25519_dalek as dalek;
 use ed25519_dalek::Verifier;
-use narwhal_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519Signature};
+use narwhal_crypto::bls12381::{BLS12381PublicKey, BLS12381PrivateKey, BLS12381KeyPair};
+use narwhal_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519PrivateKey};
 use narwhal_crypto::traits::{
     AggregateAuthenticator, Authenticator, KeyPair as NarwhalKeypair, SigningKey, ToFromBytes,
     VerifyingKey,
@@ -27,12 +28,13 @@ use signature::Signature as NativeSignature;
 use std::collections::{HashMap};
 use std::hash::{Hash, Hasher};
 
-// Question: Should we change this to newtype?
+pub type PublicKey = BLS12381PublicKey;
+pub type PrivateKey = BLS12381PrivateKey;
+pub type KeyPair = BLS12381KeyPair;
 
-pub type KeyPair = Ed25519KeyPair;
-
-pub type PublicKey = <KeyPair as NarwhalKeypair>::PubKey;
-pub type PrivateKey = <KeyPair as NarwhalKeypair>::PrivKey;
+const PUBLIC_KEY_LENGTH: usize = narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH;
+const SECRET_KEY_LENGTH: usize = narwhal_crypto::bls12381::BLS_PRIVATE_KEY_LENGTH;
+const SIGNATURE_LENGTH: usize = narwhal_crypto::bls12381::BLS_SIGNATURE_LENGTH;
 
 // Signatures for Authorities
 pub type AuthoritySignature = <<KeyPair as NarwhalKeypair>::PubKey as VerifyingKey>::Sig;
@@ -57,14 +59,31 @@ pub trait SuiKeypair {
         Self: Sized;
 }
 
+pub trait IntoBytes<const BYTE_LENGTH: usize> {
+    fn to_bytes(&self) -> [u8; BYTE_LENGTH];
+}
+
+impl IntoBytes<{ed25519_dalek::PUBLIC_KEY_LENGTH}> for Ed25519PublicKey {
+    fn to_bytes(&self) -> [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] {
+        self.0.to_bytes()
+    }
+}
+
+impl IntoBytes<{narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH}> for BLS12381PublicKey {
+    fn to_bytes(&self) -> [u8; narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH] {
+        self.pubkey.to_bytes()
+    }
+}
+
+
 impl SuiKeypair for KeyPair {
-    const PUBLIC_KEY_LENGTH: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
-    const SECRET_KEY_LENGTH: usize = ed25519_dalek::SECRET_KEY_LENGTH;
-    const SIGNATURE_LENGTH: usize = ed25519_dalek::SIGNATURE_LENGTH;
+    const PUBLIC_KEY_LENGTH: usize = PUBLIC_KEY_LENGTH;
+    const SECRET_KEY_LENGTH: usize = SECRET_KEY_LENGTH;
+    const SIGNATURE_LENGTH: usize = SIGNATURE_LENGTH;
 
     fn public_key_bytes(&self) -> PublicKeyBytes {
         // self.public_key_cell.get_or_init(|| {
-        let pk_arr: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = self.name.0.to_bytes();
+        let pk_arr: [u8; Self::PUBLIC_KEY_LENGTH] = self.public().to_bytes();
         PublicKeyBytes(pk_arr)
         // })
     }
@@ -81,9 +100,8 @@ impl SuiKeypair for KeyPair {
     }
 
     /// Make a Narwhal-compatible key pair from a Sui keypair.
-    fn make_narwhal_keypair(&self) -> Ed25519KeyPair {
-        let key = (*self).copy();
-        key
+    fn make_narwhal_keypair(&self) -> KeyPair {
+        (*self).copy()
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<KeyPair, signature::Error> {
@@ -101,11 +119,11 @@ pub trait SuiSignature {
 }
 
 impl SuiSignature for AccountSignature {
-    const SIGNATURE_LENGTH: usize = ed25519_dalek::SIGNATURE_LENGTH;
+    const SIGNATURE_LENGTH: usize = SIGNATURE_LENGTH;
 }
 
 pub trait SuiAuthoritySignature {
-    fn new<T>(value: &T, secret: &dyn signature::Signer<Ed25519Signature>) -> Self
+    fn new<T>(value: &T, secret: &dyn signature::Signer<Self>) -> Self
     where
         T: Signable<Vec<u8>>;
     fn verify<T>(&self, value: &T, author: PublicKeyBytes) -> Result<(), SuiError>
@@ -114,7 +132,7 @@ pub trait SuiAuthoritySignature {
 }
 
 impl SuiAuthoritySignature for AuthoritySignature {
-    fn new<T>(value: &T, secret: &dyn signature::Signer<Ed25519Signature>) -> Self
+    fn new<T>(value: &T, secret: &dyn signature::Signer<Self>) -> Self
     where
         T: Signable<Vec<u8>>,
     {
@@ -158,12 +176,12 @@ impl signature::Signer<Signature> for KeyPair {
 
 #[serde_as]
 #[derive(
-    Eq, Default, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, JsonSchema,
+    Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, JsonSchema,
 )]
 pub struct PublicKeyBytes(
     #[schemars(with = "Base64")]
     #[serde_as(as = "Readable<Base64, Bytes>")]
-    [u8; dalek::PUBLIC_KEY_LENGTH],
+    [u8; KeyPair::PUBLIC_KEY_LENGTH],
 );
 
 impl PublicKeyBytes {
@@ -171,9 +189,14 @@ impl PublicKeyBytes {
         self.0.to_vec()
     }
     /// Make a Narwhal-compatible public key from a Sui pub.
-    pub fn make_narwhal_public_key(&self) -> Result<Ed25519PublicKey, signature::Error> {
-        let pub_key = dalek::PublicKey::from_bytes(&self.0)?;
-        Ok(Ed25519PublicKey(pub_key))
+    pub fn make_narwhal_public_key(&self) -> Result<PublicKey, signature::Error> {
+        PublicKey::from_bytes(&self.0)
+    }
+}
+
+impl Default for PublicKeyBytes {
+    fn default() -> Self {
+        PublicKeyBytes([0u8; KeyPair::PUBLIC_KEY_LENGTH])
     }
 }
 
@@ -183,13 +206,14 @@ impl AsRef<[u8]> for PublicKeyBytes {
     }
 }
 
-impl TryInto<Ed25519PublicKey> for PublicKeyBytes {
+// Impl this for BLS too
+impl TryInto<PublicKey> for PublicKeyBytes {
     type Error = SuiError;
 
-    fn try_into(self) -> Result<Ed25519PublicKey, Self::Error> {
+    fn try_into(self) -> Result<PublicKey, Self::Error> {
         // TODO(https://github.com/MystenLabs/sui/issues/101): Do better key validation
         // to ensure the bytes represent a poin on the curve.
-        Ed25519PublicKey::from_bytes(self.as_ref()).map_err(|_| SuiError::InvalidAuthenticator)
+        PublicKey::from_bytes(self.as_ref()).map_err(|_| SuiError::InvalidAuthenticator)
     }
 }
 
@@ -198,7 +222,7 @@ impl TryFrom<&[u8]> for PublicKeyBytes {
     type Error = SuiError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, SuiError> {
-        let arr: [u8; dalek::PUBLIC_KEY_LENGTH] = bytes
+        let arr: [u8; PUBLIC_KEY_LENGTH] = bytes
             .try_into()
             .map_err(|_| SuiError::InvalidAuthenticator)?;
         Ok(Self(arr))
@@ -212,6 +236,8 @@ impl std::fmt::Debug for PublicKeyBytes {
         Ok(())
     }
 }
+
+// Make PublicKeyBytes generic
 
 pub fn random_key_pairs(num: usize) -> Vec<KeyPair> {
     let mut items = num;
@@ -612,7 +638,7 @@ where
 {
     lookup: PubKeyLookup<S::PubKey>,
     pub messages: Vec<Vec<u8>>,
-    pub signatures: Vec<S>, // Change to AggregatedAuthenticator. Then make Ed25519Signature implement AggregatedAuthenticator.
+    pub signatures: Vec<S>,
     pub public_keys: Vec<Vec<S::PubKey>>,
 }
 

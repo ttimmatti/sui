@@ -41,7 +41,7 @@ pub struct Benchmark {
     /// Use Move orders
     #[clap(long, global = true)]
     pub use_native: bool,
-    #[clap(long, default_value = "2000", global = true)]
+    #[clap(long, default_value = "1", global = true)]
     pub batch_size: usize,
 
     #[clap(

@@ -408,7 +408,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "miniz_oxide",
- "object 0.29.0",
+ "object",
  "rustc-demangle",
 ]
 
@@ -1003,7 +1003,7 @@ dependencies = [
 [[package]]
 name = "config"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "arc-swap",
  "crypto 0.1.0 (git+https://github.com/punwai/narwhal-1)",
@@ -1060,7 +1060,7 @@ dependencies = [
 [[package]]
 name = "consensus"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -1378,7 +1378,7 @@ dependencies = [
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "anyhow",
  "base64ct",
@@ -1386,11 +1386,15 @@ dependencies = [
  "blst",
  "ed25519-dalek",
  "eyre",
+ "hex",
+ "hkdf",
  "once_cell",
  "rand 0.7.3",
  "readonly",
  "serde 1.0.138",
  "serde_bytes",
+ "serde_with",
+ "sha3 0.10.1",
  "signature",
  "tokio",
  "workspace-hack 0.1.0 (git+https://github.com/punwai/narwhal-1)",
@@ -1497,7 +1501,7 @@ dependencies = [
 [[package]]
 name = "dag"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "arc-swap",
  "crypto 0.1.0 (git+https://github.com/punwai/narwhal-1)",
@@ -1588,7 +1592,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3495912c9c1ccf2e18976439f4443f3fee0fd61f424ff99fde6a66b15ecb448f"
 dependencies = [
  "cfg-if 1.0.0",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
  "lock_api 0.4.7",
  "parking_lot_core 0.9.3",
 ]
@@ -1996,7 +2000,7 @@ dependencies = [
 [[package]]
 name = "executor"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2549,9 +2553,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db0d4cf898abf0081f964436dc980e96670a0f36863e4b83aaacdb65c9d7ccc3"
+checksum = "607c8a29735385251a339424dd462993c0fed8fa09d378f259377df08c126022"
 dependencies = [
  "ahash",
 ]
@@ -2693,9 +2697,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.19"
+version = "0.14.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42dc3c131584288d375f2d07f822b0cb012d8c6fb899a5b9fdb3cb7eb9b6004f"
+checksum = "02c929dc5c39e335a03c405292728118860721b10190d98c2a0f0efd5baafbac"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2844,7 +2848,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e"
 dependencies = [
  "autocfg",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
 ]
 
 [[package]]
@@ -2870,7 +2874,7 @@ checksum = "6ab388864246d58a276e60e7569a833d9cc4cd75c66e5ca77c177dad38e59996"
 dependencies = [
  "ahash",
  "dashmap",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
  "once_cell",
  "parking_lot 0.12.1",
 ]
@@ -4240,7 +4244,7 @@ dependencies = [
 [[package]]
 name = "network"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "async-trait",
  "backoff",
@@ -4350,7 +4354,7 @@ dependencies = [
 [[package]]
 name = "node"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4541,15 +4545,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "object"
-version = "0.28.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e42c982f2d955fac81dd7e1d0e1426a7d702acd9c98d19ab01083a6a0328c424"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
@@ -5121,7 +5116,7 @@ dependencies = [
 [[package]]
 name = "primary"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -6127,9 +6122,9 @@ dependencies = [
 
 [[package]]
 name = "serde_yaml"
-version = "0.8.24"
+version = "0.8.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707d15895415db6628332b737c838b88c598522e4dc70647e59b72312924aebc"
+checksum = "1ec0091e1f5aa338283ce049bd9dfefd55e1f168ac233e85c1ffe0038fb48cbe"
 dependencies = [
  "indexmap",
  "ryu",
@@ -8017,7 +8012,7 @@ dependencies = [
 [[package]]
 name = "types"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "base64",
  "bincode",
@@ -8566,7 +8561,7 @@ dependencies = [
 [[package]]
 name = "worker"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8668,6 +8663,7 @@ dependencies = [
  "cargo_metadata",
  "cassowary",
  "cast 0.2.7",
+ "cast 0.3.0",
  "cc",
  "cexpr",
  "cfg-expr",
@@ -8689,8 +8685,10 @@ dependencies = [
  "colored-diff",
  "combine",
  "config 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "config 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "config 0.11.0",
  "consensus 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "consensus 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "console-api",
  "console-subscriber",
  "constant_time_eq",
@@ -8710,6 +8708,7 @@ dependencies = [
  "crossterm 0.22.1",
  "crossterm 0.23.2",
  "crypto 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "crypto 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "crypto-common",
  "crypto-mac",
  "csv",
@@ -8717,6 +8716,7 @@ dependencies = [
  "curve25519-dalek",
  "curve25519-dalek-fiat",
  "dag 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "dag 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "darling 0.13.4",
  "darling 0.14.1",
  "darling_core 0.13.4",
@@ -8760,6 +8760,7 @@ dependencies = [
  "ethnum",
  "event-listener",
  "executor 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "executor 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "eyre",
  "fail",
  "fastrand",
@@ -8804,7 +8805,7 @@ dependencies = [
  "hakari",
  "half",
  "hashbrown 0.11.2",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
  "hashlink",
  "hdrhistogram",
  "heck 0.3.3",
@@ -8927,10 +8928,12 @@ dependencies = [
  "named-lock",
  "nested",
  "network 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "network 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "nexlint",
  "nexlint-lints",
  "nibble_vec",
  "node 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "node 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "nom 5.1.2",
  "nom 7.1.1",
  "normalize-line-endings",
@@ -8945,7 +8948,7 @@ dependencies = [
  "num_cpus",
  "num_enum",
  "num_enum_derive",
- "object 0.28.4",
+ "object",
  "once_cell",
  "oorandom",
  "opaque-debug 0.3.0",
@@ -8995,6 +8998,7 @@ dependencies = [
  "pretty_assertions",
  "prettyplease",
  "primary 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "primary 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "proc-macro-crate",
  "proc-macro-error",
  "proc-macro-error-attr",
@@ -9184,6 +9188,7 @@ dependencies = [
  "typed-store 0.1.0 (git+https://github.com/MystenLabs/mysten-infra?rev=94d7da89f6a52d7f60a9802b0a03147a9c89c3e4)",
  "typenum",
  "types 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "types 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "ucd-trie",
  "uncased",
  "unescape",
@@ -9229,7 +9234,9 @@ dependencies = [
  "webpki-roots 0.22.3",
  "which",
  "worker 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "worker 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "workspace-hack 0.1.0 (git+https://github.com/MystenLabs/narwhal?rev=fe7de29b59810d4515604af949cdcf1fb5a3720a)",
+ "workspace-hack 0.1.0 (git+https://github.com/punwai/narwhal-1)",
  "yaml-rust",
  "zeroize",
  "zeroize_derive",
@@ -9355,7 +9362,7 @@ dependencies = [
  "h2",
  "half",
  "hashbrown 0.11.2",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
  "hdrhistogram",
  "heck 0.3.3",
  "heck 0.4.0",
@@ -9576,7 +9583,7 @@ dependencies = [
 [[package]]
 name = "workspace-hack"
 version = "0.1.0"
-source = "git+https://github.com/punwai/narwhal-1#809be56a111bfd38abb3af36d49da27a6601f9f4"
+source = "git+https://github.com/punwai/narwhal-1#9bc2ce8d901ba82e0b2f37ea152d2c240e59003a"
 dependencies = [
  "adler",
  "ahash",
@@ -9692,7 +9699,7 @@ dependencies = [
  "h2",
  "half",
  "hashbrown 0.11.2",
- "hashbrown 0.12.1",
+ "hashbrown 0.12.2",
  "hdrhistogram",
  "heck 0.3.3",
  "heck 0.4.0",

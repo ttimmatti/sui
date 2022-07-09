@@ -5,9 +5,9 @@
 use super::{base_types::*, batch::*, committee::Committee, error::*, event::Event};
 use crate::committee::{EpochId, StakeUnit};
 use crate::crypto::{
-    sha3_hash, AggregateAccountSignature, AggregateAuthoritySignature,
-    AuthoritySignInfo, AuthoritySignature, AuthorityStrongQuorumSignInfo, BcsSignable,
-    EmptySignInfo, Signable, Signature, SuiAuthoritySignature, VerificationObligation,
+    sha3_hash, AggregateAccountSignature, AggregateAuthoritySignature, AuthoritySignInfo,
+    AuthoritySignature, AuthorityStrongQuorumSignInfo, BcsSignable, EmptySignInfo, Signable,
+    Signature, SuiAuthoritySignature, VerificationObligation,
 };
 use crate::gas::GasCostSummary;
 use crate::messages_checkpoint::CheckpointFragment;
@@ -543,13 +543,19 @@ impl<S> TransactionEnvelope<S> {
         let idx = obligation.add_message(message);
         let key = obligation.lookup_public_key(&public_key)?;
 
-        obligation.public_keys.get_mut(idx)
+        obligation
+            .public_keys
+            .get_mut(idx)
             .ok_or(SuiError::InvalidAuthenticator)?
             .push(key);
-        obligation.signatures.get_mut(idx)
+        obligation
+            .signatures
+            .get_mut(idx)
             .ok_or(SuiError::InvalidAuthenticator)?
             .add_signature(signature)
-            .map_err(|_| SuiError::InvalidSignature { error: "Failed to add signature to obligation".to_string() })?;
+            .map_err(|_| SuiError::InvalidSignature {
+                error: "Failed to add signature to obligation".to_string(),
+            })?;
         Ok(())
     }
 
@@ -1237,7 +1243,7 @@ impl<'a> SignatureAggregator<'a> {
             weight: 0,
             used_authorities: HashSet::new(),
             partial: CertifiedTransaction::new(committee.epoch, transaction),
-            signature_stash: Vec::new()
+            signature_stash: Vec::new(),
         }
     }
 
@@ -1261,13 +1267,16 @@ impl<'a> SignatureAggregator<'a> {
         let voting_rights = self.committee.weight(&authority);
         fp_ensure!(voting_rights > 0, SuiError::UnknownSigner);
         self.weight += voting_rights;
-        
+
         self.signature_stash.push((authority, signature));
 
         if self.weight >= self.committee.quorum_threshold() {
             // Update certificate.
-            self.partial.auth_sign_info =
-                AuthorityStrongQuorumSignInfo::new_with_signatures(self.partial.auth_sign_info.epoch, self.signature_stash.clone(), self.committee)?;
+            self.partial.auth_sign_info = AuthorityStrongQuorumSignInfo::new_with_signatures(
+                self.partial.auth_sign_info.epoch,
+                self.signature_stash.clone(),
+                self.committee,
+            )?;
             Ok(Some(self.partial.clone()))
         } else {
             Ok(None)
@@ -1318,13 +1327,7 @@ impl CertifiedTransaction {
         }
 
         let mut obligation = VerificationObligation::default();
-        println!("Here");
         self.add_to_verification_obligation(committee, &mut obligation)?;
-        println!("HERE2");
-        println!("{:?}", obligation.signatures);
-        println!("{:?}", obligation.public_keys);
-        println!("{:?}", obligation.messages);
-
         obligation.verify_all().map(|_| ())
     }
 

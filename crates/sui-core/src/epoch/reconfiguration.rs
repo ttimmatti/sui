@@ -205,7 +205,8 @@ where
                 .unwrap();
             let client: A = A::recreate(channel);
             let name: &[u8] = &validator.name;
-            let public_key_bytes = PublicKeyBytes::try_from(name)?;
+            let public_key_bytes =
+                PublicKeyBytes::try_from(name).map_err(|_| SuiError::InvalidAuthenticator)?;
             new_clients.insert(public_key_bytes, client);
         }
 

@@ -4,9 +4,10 @@
 
 use std::collections::BTreeMap;
 
+use narwhal_crypto::traits::KeyPair;
 use roaring::RoaringBitmap;
 
-use crate::crypto::{get_key_pair, SuiKeypair};
+use crate::crypto::get_key_pair;
 
 use super::*;
 
@@ -135,6 +136,7 @@ fn test_certificates() {
         .append(v2.auth_sign_info.authority, v2.auth_sign_info.signature)
         .unwrap()
         .unwrap();
+        
     assert!(c.verify(&committee).is_ok());
 
     let mut builder = SignatureAggregator::try_new(transaction, &committee).unwrap();
@@ -187,7 +189,9 @@ fn test_new_with_signatures() {
     );
 }
 
-fn get_obligation_input<T>(value: &T) -> (VerificationObligation<AggregateAuthoritySignature>, usize)
+fn get_obligation_input<T>(
+    value: &T,
+) -> (VerificationObligation<AggregateAuthoritySignature>, usize)
 where
     T: BcsSignable,
 {
@@ -197,7 +201,7 @@ where
     let mut sign_message: Vec<u8> = Vec::new();
     value.write(&mut sign_message);
     let idx = obligation.add_message(sign_message);
-    (obligation, idx) 
+    (obligation, idx)
 }
 
 #[test]
@@ -209,7 +213,7 @@ fn test_handle_reject_malicious_signature() {
     for _ in 0..5 {
         let (_, sec) = get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
-        authorities.insert(sec.public_key_bytes(), 1);
+        authorities.insert(sec.public_key_bytes(), 1u64);
         signatures.push((sec.public_key_bytes(), sig));
     }
 
@@ -277,9 +281,12 @@ fn test_reject_extra_public_key() {
     quorum.signers_map.insert(3);
 
     let (mut obligation, idx) = get_obligation_input(&message);
-    assert!(quorum
-        .add_to_verification_obligation(&committee, &mut obligation, idx)
-        .is_err());
+    let verify = || -> SuiResult<()> {
+        quorum.add_to_verification_obligation(&committee, &mut obligation, idx)?;
+        obligation.verify_all()?;
+        Ok(())
+    };
+    assert!(verify().is_err());
 }
 
 #[test]

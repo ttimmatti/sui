@@ -9,14 +9,13 @@ use crate::sui_serde::SuiBitmap;
 use anyhow::Error;
 use base64ct::Encoding;
 use digest::Digest;
-use ed25519_dalek as dalek;
-use ed25519_dalek::Verifier;
-use narwhal_crypto::bls12381::{BLS12381PublicKey, BLS12381PrivateKey, BLS12381KeyPair};
-use narwhal_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519PrivateKey};
-use narwhal_crypto::traits::{
-    AggregateAuthenticator, Authenticator, KeyPair as NarwhalKeypair, SigningKey, ToFromBytes,
-    VerifyingKey,
+// use narwhal_crypto::bls12381::BLS12381KeyPair;
+use narwhal_crypto::ed25519::Ed25519KeyPair;
+pub use narwhal_crypto::traits::KeyPair as NarwhalKeypair;
+pub use narwhal_crypto::traits::{
+    AggregateAuthenticator, Authenticator, SigningKey, ToFromBytes, VerifyingKey, VerifyingKeyBytes,
 };
+use narwhal_crypto::Verifier;
 use rand::rngs::OsRng;
 use roaring::RoaringBitmap;
 use schemars::JsonSchema;
@@ -25,16 +24,16 @@ use serde_with::serde_as;
 use serde_with::Bytes;
 use sha3::Sha3_256;
 use signature::Signature as NativeSignature;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-pub type PublicKey = BLS12381PublicKey;
-pub type PrivateKey = BLS12381PrivateKey;
-pub type KeyPair = BLS12381KeyPair;
+// Comment the one you want to use
+pub type KeyPair = Ed25519KeyPair; // Associated Types don't work here yet for some reason.
 
-const PUBLIC_KEY_LENGTH: usize = narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH;
-const SECRET_KEY_LENGTH: usize = narwhal_crypto::bls12381::BLS_PRIVATE_KEY_LENGTH;
-const SIGNATURE_LENGTH: usize = narwhal_crypto::bls12381::BLS_SIGNATURE_LENGTH;
+
+pub type PrivateKey = <KeyPair as NarwhalKeypair>::PrivKey;
+pub type PublicKey = <KeyPair as NarwhalKeypair>::PubKey;
+pub type PublicKeyBytes = <PublicKey as VerifyingKey>::Bytes;
 
 // Signatures for Authorities
 pub type AuthoritySignature = <<KeyPair as NarwhalKeypair>::PubKey as VerifyingKey>::Sig;
@@ -45,82 +44,6 @@ pub type AggregateAuthoritySignature =
 pub type AccountSignature = <<KeyPair as NarwhalKeypair>::PubKey as VerifyingKey>::Sig;
 pub type AggregateAccountSignature =
     <<<KeyPair as NarwhalKeypair>::PubKey as VerifyingKey>::Sig as Authenticator>::AggregateSig;
-
-pub trait SuiKeypair {
-    const PUBLIC_KEY_LENGTH: usize;
-    const SECRET_KEY_LENGTH: usize;
-    const SIGNATURE_LENGTH: usize;
-
-    fn public_key_bytes(&self) -> PublicKeyBytes;
-    fn make_narwhal_keypair(&self) -> KeyPair;
-    fn copy(&self) -> KeyPair;
-    fn from_bytes(bytes: &[u8]) -> Result<Self, signature::Error>
-    where
-        Self: Sized;
-}
-
-pub trait IntoBytes<const BYTE_LENGTH: usize> {
-    fn to_bytes(&self) -> [u8; BYTE_LENGTH];
-}
-
-impl IntoBytes<{ed25519_dalek::PUBLIC_KEY_LENGTH}> for Ed25519PublicKey {
-    fn to_bytes(&self) -> [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] {
-        self.0.to_bytes()
-    }
-}
-
-impl IntoBytes<{narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH}> for BLS12381PublicKey {
-    fn to_bytes(&self) -> [u8; narwhal_crypto::bls12381::BLS_PUBLIC_KEY_LENGTH] {
-        self.pubkey.to_bytes()
-    }
-}
-
-
-impl SuiKeypair for KeyPair {
-    const PUBLIC_KEY_LENGTH: usize = PUBLIC_KEY_LENGTH;
-    const SECRET_KEY_LENGTH: usize = SECRET_KEY_LENGTH;
-    const SIGNATURE_LENGTH: usize = SIGNATURE_LENGTH;
-
-    fn public_key_bytes(&self) -> PublicKeyBytes {
-        // self.public_key_cell.get_or_init(|| {
-        let pk_arr: [u8; Self::PUBLIC_KEY_LENGTH] = self.public().to_bytes();
-        PublicKeyBytes(pk_arr)
-        // })
-    }
-
-    // TODO: eradicate unneeded uses (i.e. most)
-    /// Avoid implementing `clone` on secret keys to prevent mistakes.
-    #[must_use]
-    fn copy(&self) -> KeyPair {
-        KeyPair {
-            name: self.public().clone(),
-            secret: <KeyPair as NarwhalKeypair>::PrivKey::from_bytes(self.private().as_ref())
-                .unwrap(),
-        }
-    }
-
-    /// Make a Narwhal-compatible key pair from a Sui keypair.
-    fn make_narwhal_keypair(&self) -> KeyPair {
-        (*self).copy()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<KeyPair, signature::Error> {
-        let public_key_bytes = &bytes[..Self::PUBLIC_KEY_LENGTH];
-        let secret_key_bytes = &bytes[Self::PUBLIC_KEY_LENGTH..];
-        Ok(KeyPair {
-            name: <KeyPair as NarwhalKeypair>::PubKey::from_bytes(public_key_bytes)?,
-            secret: <KeyPair as NarwhalKeypair>::PrivKey::from_bytes(secret_key_bytes)?,
-        })
-    }
-}
-
-pub trait SuiSignature {
-    const SIGNATURE_LENGTH: usize;
-}
-
-impl SuiSignature for AccountSignature {
-    const SIGNATURE_LENGTH: usize = SIGNATURE_LENGTH;
-}
 
 pub trait SuiAuthoritySignature {
     fn new<T>(value: &T, secret: &dyn signature::Signer<Self>) -> Self
@@ -146,7 +69,9 @@ impl SuiAuthoritySignature for AuthoritySignature {
         T: Signable<Vec<u8>>,
     {
         // is this a cryptographically valid public Key?
-        let public_key: PublicKey = author.try_into()?;
+        let public_key: PublicKey = author
+            .try_into_public_key()
+            .map_err(|_| SuiError::InvalidAddress)?;
 
         // serialize the message (see BCS serialization for determinism)
         let mut message = Vec::new();
@@ -168,76 +93,12 @@ impl signature::Signer<Signature> for KeyPair {
         let pk_bytes = self.public_key_bytes();
         let public_key_bytes = pk_bytes.as_ref();
         let mut result_bytes = [0u8; SUI_SIGNATURE_LENGTH];
-        result_bytes[..KeyPair::SIGNATURE_LENGTH].copy_from_slice(signature_bytes.as_ref());
-        result_bytes[KeyPair::SIGNATURE_LENGTH..].copy_from_slice(public_key_bytes);
+        result_bytes[..<KeyPair as NarwhalKeypair>::Sig::LENGTH]
+            .copy_from_slice(signature_bytes.as_ref());
+        result_bytes[<KeyPair as NarwhalKeypair>::Sig::LENGTH..].copy_from_slice(public_key_bytes);
         Ok(Signature(result_bytes))
     }
 }
-
-#[serde_as]
-#[derive(
-    Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, JsonSchema,
-)]
-pub struct PublicKeyBytes(
-    #[schemars(with = "Base64")]
-    #[serde_as(as = "Readable<Base64, Bytes>")]
-    [u8; KeyPair::PUBLIC_KEY_LENGTH],
-);
-
-impl PublicKeyBytes {
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
-    }
-    /// Make a Narwhal-compatible public key from a Sui pub.
-    pub fn make_narwhal_public_key(&self) -> Result<PublicKey, signature::Error> {
-        PublicKey::from_bytes(&self.0)
-    }
-}
-
-impl Default for PublicKeyBytes {
-    fn default() -> Self {
-        PublicKeyBytes([0u8; KeyPair::PUBLIC_KEY_LENGTH])
-    }
-}
-
-impl AsRef<[u8]> for PublicKeyBytes {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-// Impl this for BLS too
-impl TryInto<PublicKey> for PublicKeyBytes {
-    type Error = SuiError;
-
-    fn try_into(self) -> Result<PublicKey, Self::Error> {
-        // TODO(https://github.com/MystenLabs/sui/issues/101): Do better key validation
-        // to ensure the bytes represent a poin on the curve.
-        PublicKey::from_bytes(self.as_ref()).map_err(|_| SuiError::InvalidAuthenticator)
-    }
-}
-
-// TODO(https://github.com/MystenLabs/sui/issues/101): more robust key validation
-impl TryFrom<&[u8]> for PublicKeyBytes {
-    type Error = SuiError;
-
-    fn try_from(bytes: &[u8]) -> Result<Self, SuiError> {
-        let arr: [u8; PUBLIC_KEY_LENGTH] = bytes
-            .try_into()
-            .map_err(|_| SuiError::InvalidAuthenticator)?;
-        Ok(Self(arr))
-    }
-}
-
-impl std::fmt::Debug for PublicKeyBytes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let s = hex::encode(&self.0);
-        write!(f, "k#{}", s)?;
-        Ok(())
-    }
-}
-
-// Make PublicKeyBytes generic
 
 pub fn random_key_pairs(num: usize) -> Vec<KeyPair> {
     let mut items = num;
@@ -271,14 +132,14 @@ where
 
 // TODO: C-GETTER
 pub fn get_key_pair_from_bytes(bytes: &[u8]) -> SuiResult<(SuiAddress, KeyPair)> {
-    let kp = KeyPair::from_bytes(bytes).map_err(|e| SuiError::InvalidKeypair {
+    let kp = KeyPair::generate_from_bytes(bytes).map_err(|e| SuiError::InvalidKeypair {
         error: e.to_string(),
     })?;
     Ok((SuiAddress::from(kp.public_key_bytes()), kp))
 }
 
 // TODO: replace this with a byte interpretation based on multicodec
-pub const SUI_SIGNATURE_LENGTH: usize = KeyPair::SIGNATURE_LENGTH + KeyPair::PUBLIC_KEY_LENGTH;
+pub const SUI_SIGNATURE_LENGTH: usize = PublicKey::LENGTH + AccountSignature::LENGTH;
 
 #[serde_as]
 #[derive(Eq, PartialEq, Copy, Clone, Serialize, Deserialize, JsonSchema)]
@@ -326,11 +187,11 @@ impl Signature {
     }
 
     pub fn signature_bytes(&self) -> &[u8] {
-        &self.0[..AccountSignature::SIGNATURE_LENGTH]
+        &self.0[..AccountSignature::LENGTH]
     }
 
     pub fn public_key_bytes(&self) -> &[u8] {
-        &self.0[AccountSignature::SIGNATURE_LENGTH..]
+        &self.0[AccountSignature::LENGTH..]
     }
 
     /// This performs signature verification on the passed-in signature, additionally checking
@@ -365,11 +226,11 @@ impl Signature {
         T: Signable<Vec<u8>>,
     {
         // Is this signature emitted by the expected author?
-        let public_key_bytes: [u8; KeyPair::PUBLIC_KEY_LENGTH] = self
+        let public_key_bytes: [u8; <KeyPair as NarwhalKeypair>::PubKey::LENGTH] = self
             .public_key_bytes()
             .try_into()
             .expect("byte lengths match");
-        let received_addr = SuiAddress::from(&PublicKeyBytes(public_key_bytes));
+        let received_addr = SuiAddress::from(&PublicKeyBytes::new(public_key_bytes));
         if received_addr != author {
             return Err(SuiError::IncorrectSigner {
                 error: format!("Signature get_verification_inputs() failure. Author is {author}, received address is {received_addr}")
@@ -387,7 +248,7 @@ impl Signature {
         let mut message = Vec::new();
         value.write(&mut message);
 
-        Ok((message, signature, PublicKeyBytes(public_key_bytes)))
+        Ok((message, signature, PublicKeyBytes::new(public_key_bytes)))
     }
 }
 
@@ -442,7 +303,9 @@ impl AuthoritySignInfo {
             .get_mut(message_index)
             .ok_or(SuiError::InvalidAddress)?
             .add_signature(self.signature.clone())
-            .map_err(|_| SuiError::InvalidSignature { error: "Invalid Signature".to_string() })?;
+            .map_err(|_| SuiError::InvalidSignature {
+                error: "Invalid Signature".to_string(),
+            })?;
         Ok(())
     }
 }
@@ -511,8 +374,11 @@ impl<const STRONG_THRESHOLD: bool> AuthorityQuorumSignInfo<STRONG_THRESHOLD> {
 
         Ok(AuthorityQuorumSignInfo {
             epoch,
-            signature: AggregateAuthoritySignature::aggregate(sigs)
-                .map_err(|e| SuiError::InvalidSignature { error: e.to_string() })?,
+            signature: AggregateAuthoritySignature::aggregate(sigs).map_err(|e| {
+                SuiError::InvalidSignature {
+                    error: e.to_string(),
+                }
+            })?,
             signers_map: map,
         })
     }
@@ -541,15 +407,22 @@ impl<const STRONG_THRESHOLD: bool> AuthorityQuorumSignInfo<STRONG_THRESHOLD> {
                 expected_epoch: committee.epoch()
             }
         );
-        
+
         let mut weight = 0;
-        let pk_vec = obligation.public_keys.get_mut(message_index).ok_or(SuiError::InvalidAddress)?;
+        let pk_vec = obligation
+            .public_keys
+            .get_mut(message_index)
+            .ok_or(SuiError::InvalidAddress)?;
 
         // Create obligations for the committee signatures
-        obligation.signatures.get_mut(message_index)
+        obligation
+            .signatures
+            .get_mut(message_index)
             .ok_or(SuiError::InvalidAuthenticator)?
             .add_aggregate(self.signature.clone())
-            .map_err(|_| SuiError::InvalidSignature { error: "Signature Aggregation failed".to_string() })?;
+            .map_err(|_| SuiError::InvalidSignature {
+                error: "Signature Aggregation failed".to_string(),
+            })?;
 
         for authority_index in self.signers_map.iter() {
             let authority = committee
@@ -622,7 +495,7 @@ where
     }
 }
 
-pub type PubKeyLookup<P> = HashMap<PublicKeyBytes, P>;
+pub type PubKeyLookup<P> = HashMap<<P as VerifyingKey>::Bytes, P>;
 
 pub fn sha3_hash<S: Signable<Sha3_256>>(signable: &S) -> [u8; 32] {
     let mut digest = Sha3_256::default();
@@ -642,9 +515,7 @@ where
     pub public_keys: Vec<Vec<S::PubKey>>,
 }
 
-impl<S: AggregateAuthenticator> VerificationObligation<S> 
-    where PublicKeyBytes: TryInto<S::PubKey>
-{
+impl<S: AggregateAuthenticator> VerificationObligation<S> {
     pub fn new(lookup: PubKeyLookup<S::PubKey>) -> VerificationObligation<S> {
         VerificationObligation {
             lookup,
@@ -652,11 +523,15 @@ impl<S: AggregateAuthenticator> VerificationObligation<S>
         }
     }
 
-    pub fn lookup_public_key(&mut self, key_bytes: &PublicKeyBytes) -> Result<S::PubKey, SuiError> {
+    pub fn lookup_public_key(
+        &mut self,
+        key_bytes: &<<S as AggregateAuthenticator>::PubKey as VerifyingKey>::Bytes,
+    ) -> Result<S::PubKey, SuiError> {
         match self.lookup.get(key_bytes) {
             Some(v) => Ok(v.clone()),
             None => {
-                let public_key: S::PubKey = (*key_bytes).try_into()
+                let public_key: S::PubKey = (*key_bytes)
+                    .try_into()
                     .map_err(|_| SuiError::InvalidAddress)?;
                 self.lookup.insert(*key_bytes, public_key.clone());
                 Ok(public_key)
@@ -673,21 +548,18 @@ impl<S: AggregateAuthenticator> VerificationObligation<S>
         self.messages.len() - 1
     }
 
-    pub fn verify_all<'a>(self) -> SuiResult<PubKeyLookup<S::PubKey>> {
+    pub fn verify_all(self) -> SuiResult<PubKeyLookup<S::PubKey>> {
         S::batch_verify(
-            self
-                .signatures.iter().collect::<Vec<_>>(),
-            self
-                .public_keys
+            self.signatures.iter().collect::<Vec<_>>(),
+            self.public_keys
                 .iter()
                 .map(|x| x.iter().collect::<Vec<_>>())
                 .collect::<Vec<_>>(),
-            self.messages
+            self.messages,
         )
         .map_err(|error| SuiError::InvalidSignature {
             error: format!("{error}"),
         })?;
-
         Ok(self.lookup)
     }
 }

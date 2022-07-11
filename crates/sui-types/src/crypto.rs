@@ -9,7 +9,7 @@ use crate::sui_serde::SuiBitmap;
 use anyhow::Error;
 use base64ct::Encoding;
 use digest::Digest;
-// use narwhal_crypto::bls12381::BLS12381KeyPair;
+use narwhal_crypto::bls12381::BLS12381KeyPair;
 use narwhal_crypto::ed25519::Ed25519KeyPair;
 pub use narwhal_crypto::traits::KeyPair as NarwhalKeypair;
 pub use narwhal_crypto::traits::{
@@ -29,7 +29,6 @@ use std::hash::{Hash, Hasher};
 
 // Comment the one you want to use
 pub type KeyPair = Ed25519KeyPair; // Associated Types don't work here yet for some reason.
-
 
 pub type PrivateKey = <KeyPair as NarwhalKeypair>::PrivKey;
 pub type PublicKey = <KeyPair as NarwhalKeypair>::PubKey;
@@ -550,12 +549,15 @@ impl<S: AggregateAuthenticator> VerificationObligation<S> {
 
     pub fn verify_all(self) -> SuiResult<PubKeyLookup<S::PubKey>> {
         S::batch_verify(
-            self.signatures.iter().collect::<Vec<_>>(),
-            self.public_keys
+            &self.signatures[..],
+            &self.public_keys
                 .iter()
-                .map(|x| x.iter().collect::<Vec<_>>())
+                .map(|x| &x[..])
                 .collect::<Vec<_>>(),
-            self.messages,
+            &self.messages
+                .iter()
+                .map(|x| &x[..])
+                .collect::<Vec<_>>()[..]
         )
         .map_err(|error| SuiError::InvalidSignature {
             error: format!("{error}"),

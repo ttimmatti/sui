@@ -528,13 +528,13 @@ impl<S> TransactionEnvelope<S> {
     fn add_sender_sig_to_verification_obligation(
         &self,
         obligation: &mut VerificationObligation<AggregateAccountSignature>,
-    ) -> SuiResult<()> {
+    ) -> SuiResult<usize> {
         // We use this flag to see if someone has checked this before
         // and therefore we can skip the check. Note that the flag has
         // to be set to true manually, and is not set by calling this
         // "check" function.
         if self.is_verified || self.data.kind.is_system_tx() {
-            return Ok(());
+            return Ok(obligation.signatures.len() - 1);
         }
 
         let (message, signature, public_key) = self
@@ -556,7 +556,7 @@ impl<S> TransactionEnvelope<S> {
             .map_err(|_| SuiError::InvalidSignature {
                 error: "Failed to add signature to obligation".to_string(),
             })?;
-        Ok(())
+        Ok(idx)
     }
 
     pub fn sender_address(&self) -> SuiAddress {
@@ -747,12 +747,14 @@ impl SignedTransaction {
     /// Verify the signature and return the non-zero voting right of the authority.
     pub fn verify(&self, committee: &Committee) -> Result<u64, SuiError> {
         let mut obligation = VerificationObligation::default();
-        self.add_sender_sig_to_verification_obligation(&mut obligation)?;
+        let idx = self.add_sender_sig_to_verification_obligation(&mut obligation)?;
         let weight = committee.weight(&self.auth_sign_info.authority);
         fp_ensure!(weight > 0, SuiError::UnknownSigner);
-        let mut message = Vec::new();
-        self.data.write(&mut message);
-        let idx = obligation.add_message(message);
+
+        // let mut message = Vec::new();
+        // self.data.write(&mut message);
+        // let idx = obligation.add_message(message);
+
         self.auth_sign_info
             .add_to_verification_obligation(committee, &mut obligation, idx)?;
 
@@ -1337,12 +1339,13 @@ impl CertifiedTransaction {
         obligation: &mut VerificationObligation<AggregateAuthoritySignature>,
     ) -> SuiResult<()> {
         // Add the obligation of the sender signature verification.
-        self.add_sender_sig_to_verification_obligation(obligation)?;
 
-        // Add the obligation of the authority signature verifications.
+        // // Add the obligation of the authority signature verifications.
         let mut message = Vec::new();
         self.data.write(&mut message);
         let idx = obligation.add_message(message);
+
+        // let idx = self.add_sender_sig_to_verification_obligation(obligation)?;
 
         self.auth_sign_info
             .add_to_verification_obligation(committee, obligation, idx)

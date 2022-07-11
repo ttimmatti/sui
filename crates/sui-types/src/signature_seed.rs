@@ -234,7 +234,7 @@ impl SignatureSeed {
         domain: Option<&[u8]>,
     ) -> Result<KeyPair, SuiError> {
         // HKDF<Sha3_256> to deterministically generate an ed25519 private key.
-        KeyPair::deterministic_generate(&self.0, id, domain.unwrap_or(&DEFAULT_DOMAIN))
+        KeyPair::hkdf_generate(&self.0, id, domain)
             .map_err(|_| SuiError::SignatureKeyGenError("Key Generation Error".to_string()))
     }
 }

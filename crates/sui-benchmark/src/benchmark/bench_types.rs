@@ -90,7 +90,7 @@ pub enum RunningMode {
 pub enum MicroBenchmarkType {
     Throughput {
         /// Number of transactions to be sent in the benchmark
-        #[clap(long, default_value = "100000")]
+        #[clap(long, default_value = "10000")]
         num_transactions: usize,
     },
     Latency {

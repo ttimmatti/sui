@@ -69,7 +69,7 @@ impl SuiAuthoritySignature for AuthoritySignature {
     {
         // is this a cryptographically valid public Key?
         let public_key: PublicKey = author
-            .try_into_public_key()
+            .try_into()
             .map_err(|_| SuiError::InvalidAddress)?;
 
         // serialize the message (see BCS serialization for determinism)
@@ -225,11 +225,11 @@ impl Signature {
         T: Signable<Vec<u8>>,
     {
         // Is this signature emitted by the expected author?
-        let public_key_bytes: [u8; <KeyPair as NarwhalKeypair>::PubKey::LENGTH] = self
-            .public_key_bytes()
-            .try_into()
+        let public_key_bytes: PublicKeyBytes = PublicKeyBytes::from_bytes(self
+            .public_key_bytes())
             .expect("byte lengths match");
-        let received_addr = SuiAddress::from(&PublicKeyBytes::new(public_key_bytes));
+
+        let received_addr = SuiAddress::from(public_key_bytes);
         if received_addr != author {
             return Err(SuiError::IncorrectSigner {
                 error: format!("Signature get_verification_inputs() failure. Author is {author}, received address is {received_addr}")
@@ -247,7 +247,7 @@ impl Signature {
         let mut message = Vec::new();
         value.write(&mut message);
 
-        Ok((message, signature, PublicKeyBytes::new(public_key_bytes)))
+        Ok((message, signature, public_key_bytes))
     }
 }
 

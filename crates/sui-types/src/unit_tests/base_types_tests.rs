@@ -293,25 +293,9 @@ fn test_signature_serde_not_human_readable() {
     let serialized = bincode::serialize(&sig).unwrap();
     let bcs_serialized = bcs::to_bytes(&sig).unwrap();
 
-    println!("{:?}", serialized);
-    println!("{:?}", bcs_serialized);
-
     assert_eq!(serialized, bcs_serialized);
     assert_eq!(sig.0.to_bytes(), serialized[..]);
     let deserialized: AuthoritySignature = bincode::deserialize(&serialized).unwrap();
-    assert_eq!(deserialized, sig);
-}
-
-#[test]
-fn test_signature_serde_human_readable() {
-    let (_, key) = get_key_pair();
-    let sig = AuthoritySignature::new(&Foo("some data".to_string()), &key);
-    let serialized = serde_json::to_string(&sig).unwrap();
-    assert_eq!(
-        format!("\"{}\"", Base64::encode_string(sig.as_ref())),
-        serialized
-    );
-    let deserialized: AuthoritySignature = serde_json::from_str(&serialized).unwrap();
     assert_eq!(deserialized, sig);
 }
 

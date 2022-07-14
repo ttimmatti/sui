@@ -3,19 +3,19 @@
 
 use crate::{
     committee::Committee,
-    crypto::{get_key_pair_from_rng, KeyPair},
+    crypto::{get_key_pair_from_rng, AuthorityKeyPair},
 };
 use narwhal_crypto::traits::KeyPair as NarwhalKeypair;
 use std::collections::BTreeMap;
 
-pub fn make_committee_key<R>(rand: &mut R) -> (Vec<KeyPair>, Committee)
+pub fn make_committee_key<R>(rand: &mut R) -> (Vec<AuthorityKeyPair>, Committee)
 where
     R: rand::CryptoRng + rand::RngCore,
 {
     make_committee_key_num(4, rand)
 }
 
-pub fn make_committee_key_num<R>(num: usize, rand: &mut R) -> (Vec<KeyPair>, Committee)
+pub fn make_committee_key_num<R>(num: usize, rand: &mut R) -> (Vec<AuthorityKeyPair>, Committee)
 where
     R: rand::CryptoRng + rand::RngCore,
 {
@@ -23,7 +23,7 @@ where
     let mut keys = Vec::new();
 
     for _ in 0..num {
-        let (_, inner_authority_key) = get_key_pair_from_rng(rand);
+        let (_, inner_authority_key): (_, AuthorityKeyPair) = get_key_pair_from_rng(rand);
         authorities.insert(
             /* address */ inner_authority_key.public_key_bytes(),
             /* voting right */ 1,

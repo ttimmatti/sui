@@ -4,10 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use narwhal_crypto::traits::KeyPair;
+use narwhal_crypto::{traits::KeyPair, ed25519::Ed25519KeyPair, bls12381::BLS12381KeyPair};
 use roaring::RoaringBitmap;
 
-use crate::crypto::get_key_pair;
+use crate::crypto::{get_key_pair, AuthorityKeyPair};
 
 use super::*;
 
@@ -20,12 +20,33 @@ fn random_object_ref() -> ObjectRef {
 }
 
 #[test]
+fn test_multi_signature_scheme_support () {
+    let (a_sender, sender_sec): (_, BLS12381KeyPair) = get_key_pair();
+    let (a_sender2, sender_sec2): (_, Ed25519KeyPair) = get_key_pair();
+
+    let ed25519_tx= Transaction::from_data(
+        TransactionData::new_transfer(a_sender2, random_object_ref(), a_sender, random_object_ref(), 10000),
+        &sender_sec,
+    );
+
+    let bls_tx = Transaction::from_data(
+        TransactionData::new_transfer(a_sender, random_object_ref(), a_sender2, random_object_ref(), 10000),
+        &sender_sec2,
+    );
+    
+    assert!(ed25519_tx.verify().is_ok());
+    assert!(bls_tx.verify().is_ok());
+}
+
+#[test]
 fn test_signed_values() {
     let mut authorities = BTreeMap::new();
     // TODO: refactor this test to not reuse the same keys for user and authority signing
-    let (a1, sec1) = get_key_pair();
-    let (a2, sec2) = get_key_pair();
-    let (_, sec3) = get_key_pair();
+    let (a1, sec1): (_, AuthorityKeyPair) = get_key_pair();
+    let (a2, sec2): (_, AuthorityKeyPair) = get_key_pair();
+    let (a3, sec3): (_, AuthorityKeyPair) = get_key_pair();
+    let (a_sender, sender_sec): (_, Ed25519KeyPair) = get_key_pair();
+    let (a_sender2, sender_sec2): (_, Ed25519KeyPair) = get_key_pair();
 
     authorities.insert(
         /* address */ sec1.public_key_bytes(),
@@ -38,12 +59,12 @@ fn test_signed_values() {
     let committee = Committee::new(0, authorities).unwrap();
 
     let transaction = Transaction::from_data(
-        TransactionData::new_transfer(a2, random_object_ref(), a1, random_object_ref(), 10000),
-        &sec1,
+        TransactionData::new_transfer(a2, random_object_ref(), a_sender, random_object_ref(), 10000),
+        &sender_sec,
     );
     let bad_transaction = Transaction::from_data(
-        TransactionData::new_transfer(a2, random_object_ref(), a1, random_object_ref(), 10000),
-        &sec2,
+        TransactionData::new_transfer(a2, random_object_ref(), a_sender, random_object_ref(), 10000),
+        &sender_sec2,
     );
 
     let v = SignedTransaction::new(
@@ -81,9 +102,11 @@ fn test_signed_values() {
 
 #[test]
 fn test_certificates() {
-    let (a1, sec1) = get_key_pair();
-    let (a2, sec2) = get_key_pair();
-    let (_, sec3) = get_key_pair();
+    let (a1, sec1): (_, AuthorityKeyPair) = get_key_pair();
+    let (a2, sec2): (_, AuthorityKeyPair) = get_key_pair();
+    let (a2, sec3): (_, AuthorityKeyPair) = get_key_pair();
+    let (a_sender, sender_sec): (_, Ed25519KeyPair) = get_key_pair();
+    let (a_sender2, sender_sec2): (_, Ed25519KeyPair) = get_key_pair();
 
     let mut authorities = BTreeMap::new();
     authorities.insert(
@@ -97,12 +120,12 @@ fn test_certificates() {
     let committee = Committee::new(0, authorities).unwrap();
 
     let transaction = Transaction::from_data(
-        TransactionData::new_transfer(a2, random_object_ref(), a1, random_object_ref(), 10000),
-        &sec1,
+        TransactionData::new_transfer(a2, random_object_ref(), a_sender, random_object_ref(), 10000),
+        &sender_sec,
     );
     let bad_transaction = Transaction::from_data(
-        TransactionData::new_transfer(a2, random_object_ref(), a1, random_object_ref(), 10000),
-        &sec2,
+        TransactionData::new_transfer(a2, random_object_ref(), a_sender, random_object_ref(), 10000),
+        &sender_sec2,
     );
 
     let v1 = SignedTransaction::new(
@@ -161,12 +184,12 @@ fn test_new_with_signatures() {
     let mut authorities = BTreeMap::new();
 
     for _ in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         signatures.push((sec.public_key_bytes(), sig));
         authorities.insert(sec.public_key_bytes(), 1);
     }
-    let (_, sec) = get_key_pair();
+    let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
     authorities.insert(sec.public_key_bytes(), 1);
 
     let committee = Committee::new(0, authorities.clone()).unwrap();
@@ -211,7 +234,7 @@ fn test_handle_reject_malicious_signature() {
     let mut authorities = BTreeMap::new();
 
     for _ in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         authorities.insert(sec.public_key_bytes(), 1u64);
         signatures.push((sec.public_key_bytes(), sig));
@@ -221,7 +244,7 @@ fn test_handle_reject_malicious_signature() {
     let mut quorum =
         AuthorityStrongQuorumSignInfo::new_with_signatures(0, signatures, &committee).unwrap();
     {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
         let sig = AuthoritySignature::new(&message, &sec);
         quorum.signature.add_signature(sig).unwrap();
     }
@@ -239,7 +262,7 @@ fn test_bitmap_out_of_range() {
     let mut signatures: Vec<(AuthorityName, AuthoritySignature)> = Vec::new();
     let mut authorities = BTreeMap::new();
     for _ in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         authorities.insert(sec.public_key_bytes(), 1);
         signatures.push((sec.public_key_bytes(), sig));
@@ -264,7 +287,7 @@ fn test_reject_extra_public_key() {
     let mut signatures: Vec<(AuthorityName, AuthoritySignature)> = Vec::new();
     let mut authorities = BTreeMap::new();
     for i in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair) = get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         authorities.insert(sec.public_key_bytes(), 1);
         if i < 3 {
@@ -295,7 +318,7 @@ fn test_reject_reuse_signatures() {
     let mut signatures: Vec<(AuthorityName, AuthoritySignature)> = Vec::new();
     let mut authorities = BTreeMap::new();
     for i in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair)= get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         authorities.insert(sec.public_key_bytes(), 1);
         if i < 3 {
@@ -319,7 +342,7 @@ fn test_empty_bitmap() {
     let mut signatures: Vec<(AuthorityName, AuthoritySignature)> = Vec::new();
     let mut authorities = BTreeMap::new();
     for _ in 0..5 {
-        let (_, sec) = get_key_pair();
+        let (_, sec): (_, AuthorityKeyPair)= get_key_pair();
         let sig = AuthoritySignature::new(&Foo("some data".to_string()), &sec);
         authorities.insert(sec.public_key_bytes(), 1);
         signatures.push((sec.public_key_bytes(), sig));
